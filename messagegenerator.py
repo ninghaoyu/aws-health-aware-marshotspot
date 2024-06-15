@@ -8,6 +8,491 @@ import sys
 import time
 
 
+def get_message_for_opsphere(event_details, event_type, affected_accounts, affected_entities):
+    # Not srue why we have the new line in the affected entities code here
+    if len(affected_entities) >= 1:
+        affected_entities = "\n".join(affected_entities)
+        if affected_entities == "UNKNOWN":
+            affected_entities = "All resources\nin region"
+    else:
+        affected_entities = "All resources\nin region"
+    if len(affected_accounts) >= 1:
+        affected_accounts = "\n".join(affected_accounts)
+    else:
+        affected_accounts = "All accounts\nin region"
+    if event_type == "create":
+        TICKET_BODY = f"""
+            Greetings from AWS Health Aware,\n
+            There is an AWS incident that is in effect which may likely impact your resources. Here are the details:\n
+            Account(s): {affected_accounts} \n
+            Resource(s):{affected_entities} \n
+            Service: {event_details['successfulSet'][0]['event']['service']}\n
+            Region: {event_details['successfulSet'][0]['event']['region']}\n
+            Start Time (UTC): {cleanup_time(event_details['successfulSet'][0]['event']['startTime'])}\n
+            Status: {event_details['successfulSet'][0]['event']['statusCode']}\n
+            Event ARN: {event_details['successfulSet'][0]['event']['arn']}\n
+            Updates: {event_details['successfulSet'][0]['eventDescription']['latestDescription']}\n\n
+            For updates, please visit the <a href=https://status.aws.amazon.com>AWS Service Health Dashboard</a>\n
+            If you are experiencing issues related to this event, please open an <a href=https://console.aws.amazon.com/support/home>AWS Support</a> case within your account.\n\n
+            Thanks, \n\nAHA: AWS Health Aware
+    """
+    else:
+        TICKET_BODY = f"""
+            Greetings again from AWS Health Aware,\n
+            Good news! The AWS Health incident from earlier has now been marked as resolved.\n\n
+            Account(s):{affected_accounts}\n
+            Resource(s):  {affected_entities}\n
+            Service: {event_details['successfulSet'][0]['event']['service']}\n
+            Region: {event_details['successfulSet'][0]['event']['region']}\n
+            Start Time (UTC): {cleanup_time(event_details['successfulSet'][0]['event']['startTime'])}\n
+            End Time (UTC): {cleanup_time(event_details['successfulSet'][0]['event']['endTime'])}\n
+            Status: {event_details['successfulSet'][0]['event']['statusCode']}\n
+            Event ARN: {event_details['successfulSet'][0]['event']['arn']}\n
+            Updates: {event_details['successfulSet'][0]['eventDescription']['latestDescription']}\n\n  
+            If you are still experiencing issues related to this event, please open an <a href=https://console.aws.amazon.com/support/home>AWS Support</a> case within your account.\n\n
+            \n\n
+            Thanks, \n\nAHA: AWS Health Aware
+    """
+    print("Message sent to OpsPhere: ", TICKET_BODY)
+    return TICKET_BODY
+
+
+def get_org_message_for_opsphere(event_details, event_type, affected_org_accounts, affected_org_entities):
+    if len(affected_org_entities) >= 1:
+        affected_org_entities = "\n".join(affected_org_entities)
+    else:
+        affected_org_entities = "All services related resources in region"
+    if len(affected_org_accounts) >= 1:
+        affected_org_accounts = "\n".join(affected_org_accounts)
+    else:
+        affected_org_accounts = "All accounts in region"
+    if event_type == "create":
+        TICKET_BODY = f"""
+            Greetings from AWS Health Aware,\n
+            There is an AWS incident that is in effect which may likely impact your resources. Here are the details:\n\n
+            Account(s): {affected_org_accounts}\n
+            Resource(s): {affected_org_entities}\n
+            Service: {event_details['successfulSet'][0]['event']['service']}\n
+            Region: {event_details['successfulSet'][0]['event']['region']}\n
+            Start Time (UTC): {cleanup_time(event_details['successfulSet'][0]['event']['startTime'])}\n
+            Status: {event_details['successfulSet'][0]['event']['statusCode']}\n
+            Event ARN: {event_details['successfulSet'][0]['event']['arn']}\n
+            Updates: {event_details['successfulSet'][0]['eventDescription']['latestDescription']}\n\n
+            For updates, please visit the <a href=https://status.aws.amazon.com>AWS Service Health Dashboard</a>\n
+            If you are experiencing issues related to this event, please open an <a href=https://console.aws.amazon.com/support/home>AWS Support</a> case within your account.\n\n
+            Thanks, \n\nAHA: AWS Health Aware
+    """
+    else:
+        TICKET_BODY = f"""
+                Greetings again from AWS Health Aware,\n
+                Good news! The AWS Health incident from earlier has now been marked as resolved.\n
+                Account(s): {affected_org_accounts}\n
+                Resource(s): {affected_org_entities}\n
+                Service: {event_details['successfulSet'][0]['event']['service']}\n
+                Region: {event_details['successfulSet'][0]['event']['region']}\n
+                Start Time (UTC): {cleanup_time(event_details['successfulSet'][0]['event']['startTime'])}\n
+                End Time (UTC): {cleanup_time(event_details['successfulSet'][0]['event']['endTime'])}\n
+                Status: {event_details['successfulSet'][0]['event']['statusCode']}\n
+                Event ARN: {event_details['successfulSet'][0]['event']['arn']}\n
+                Updates: {event_details['successfulSet'][0]['eventDescription']['latestDescription']}\n\n
+                If you are still experiencing issues related to this event, please open an <a href=https://console.aws.amazon.com/support/home>AWS Support</a> case within your account.\n\n
+                Thanks, \n\nAHA: AWS Health Aware
+    """
+    print("Message sent to OpsPhere: ", TICKET_BODY)
+    return TICKET_BODY
+
+
+def get_message_for_feishu(event_details, event_type, affected_accounts, affected_entities):
+    message = ""
+    summary = ""
+
+    if len(affected_entities) >= 1:
+        affected_entities = "\n".join(affected_entities)
+        if affected_entities == "UNKNOWN":
+            affected_entities = "All resources in region"
+    else:
+        affected_entities = "All resources in region"
+    if len(affected_accounts) >= 1:
+        affected_accounts = "\n".join(affected_accounts)
+    else:
+        affected_accounts = "All accounts in region"
+    if event_type == "create":
+        summary += (
+            f"[NEW] AWS Health reported an issue with the {event_details['successfulSet'][0]['event']['service'].upper()} service in "
+            f"the {event_details['successfulSet'][0]['event']['region'].upper()} region."
+        )
+        message = f"""
+        {{
+            "config": {{
+                "wide_screen_mode": true
+            }},
+            "header": {{
+                "template": "red",
+                "title": {{
+                "content": "{summary}",
+                "tag": "plain_text"
+                }}
+            }},
+            "elements": [
+                {{
+                "fields": [
+                    {{
+                    "is_short": false,
+                    "text": {{
+                        "content": "**Account(s): **{affected_accounts}",
+                        "tag": "lark_md"
+                    }}
+                    }},
+                    {{
+                    "is_short": false,
+                    "text": {{
+                        "content": "**Region: **{event_details['successfulSet'][0]['event']['region']}",
+                        "tag": "lark_md"
+                    }}
+                    }},
+                    {{
+                    "is_short": false,
+                    "text": {{
+                        "content": "**Service: **{event_details['successfulSet'][0]['event']['service']}",
+                        "tag": "lark_md"
+                    }}
+                    }},
+                    {{
+                    "is_short": false,
+                    "text": {{
+                        "content": "**Status: **{event_details['successfulSet'][0]['event']['statusCode']}",
+                        "tag": "lark_md"
+                    }}
+                    }},
+                    {{
+                    "is_short": false,
+                    "text": {{
+                        "content": "**Start Time (UTC): **{cleanup_time(event_details['successfulSet'][0]['event']['startTime'])}",
+                        "tag": "lark_md"
+                    }}
+                    }},
+                    {{
+                    "is_short": false,
+                    "text": {{
+                        "content": "**Resource(s): **{affected_entities}",
+                        "tag": "lark_md"
+                    }}
+                    }},
+                    {{
+                    "is_short": false,
+                    "text": {{
+                        "content": "**Event ARN: **{event_details['successfulSet'][0]['event']['arn']}",
+                        "tag": "lark_md"
+                    }}
+                    }},
+                    {{
+                    "is_short": false,
+                    "text": {{
+                        "content": "**Updates: **{get_last_aws_update(event_details)}",
+                        "tag": "lark_md"
+                    }}
+                    }}
+                ],
+                "tag": "div"
+                }},
+                {{
+                "tag": "hr"
+                }}
+            ]
+        }}"""
+
+    elif event_type == "resolve":
+        summary += (
+            f"[RESOLVED] The AWS Health issue with the {event_details['successfulSet'][0]['event']['service'].upper()} service in "
+            f"the {event_details['successfulSet'][0]['event']['region'].upper()} region is now resolved."
+        )
+
+        message = f"""
+        {{
+            "config": {{
+                "wide_screen_mode": true
+            }},
+            "header": {{
+                "template": "bule",
+                "title": {{
+                "content": "{summary}",
+                "tag": "plain_text"
+                }}
+            }},
+            "elements": [
+                {{
+                "fields": [
+                    {{
+                    "is_short": false,
+                    "text": {{
+                        "content": "**Account(s): **{affected_accounts}",
+                        "tag": "lark_md"
+                    }}
+                    }},
+                    {{
+                    "is_short": false,
+                    "text": {{
+                        "content": "**Region: **{event_details['successfulSet'][0]['event']['region']}",
+                        "tag": "lark_md"
+                    }}
+                    }},
+                    {{
+                    "is_short": false,
+                    "text": {{
+                        "content": "**Service: **{event_details['successfulSet'][0]['event']['service']}",
+                        "tag": "lark_md"
+                    }}
+                    }},
+                    {{
+                    "is_short": false,
+                    "text": {{
+                        "content": "**Status: **{event_details['successfulSet'][0]['event']['statusCode']}",
+                        "tag": "lark_md"
+                    }}
+                    }},
+                    {{
+                    "is_short": false,
+                    "text": {{
+                        "content": "**Start Time (UTC): **{cleanup_time(event_details['successfulSet'][0]['event']['startTime'])}",
+                        "tag": "lark_md"
+                    }}
+                    }},
+                    {{
+                    "is_short": false,
+                    "text": {{
+                        "content": "**End Time (UTC): **{cleanup_time(event_details['successfulSet'][0]['event']['endTime'])}",
+                        "tag": "lark_md"
+                    }}
+                    }},
+                    {{
+                    "is_short": false,
+                    "text": {{
+                        "content": "**Resource(s): **{affected_entities}",
+                        "tag": "lark_md"
+                    }}
+                    }},
+                    {{
+                    "is_short": false,
+                    "text": {{
+                        "content": "**Event ARN: **{event_details['successfulSet'][0]['event']['arn']}",
+                        "tag": "lark_md"
+                    }}
+                    }},
+                    {{
+                    "is_short": false,
+                    "text": {{
+                        "content": "**Updates: **{get_last_aws_update(event_details)}",
+                        "tag": "lark_md"
+                    }}
+                    }}
+                ],
+                "tag": "div"
+                }},
+                {{
+                "tag": "hr"
+                }}
+            ]
+        }}"""
+
+    message = json.loads(message, strict=False)
+    print("Message sent to feishu: ", message)
+    return message
+
+
+def get_org_message_for_feishu(event_details, event_type, affected_org_accounts, affected_org_entities):
+    message = ""
+    summary = ""
+
+    if len(affected_org_entities) >= 1:
+        affected_org_entities = "\n".join(affected_org_entities)
+    else:
+        affected_org_entities = "All resources in region"
+    if len(affected_org_accounts) >= 1:
+        affected_org_accounts = "\n".join(affected_org_accounts)
+    else:
+        affected_org_accounts = "All accounts in region"
+    if event_type == "create":
+        summary += (
+            f"[NEW] AWS Health reported an issue with the {event_details['successfulSet'][0]['event']['service'].upper()} service in "
+            f"the {event_details['successfulSet'][0]['event']['region'].upper()} region.*"
+        )
+        message = f"""
+        {{
+            "config": {{
+                "wide_screen_mode": true
+            }},
+            "header": {{
+                "template": "red",
+                "title": {{
+                "content": "{summary}",
+                "tag": "plain_text"
+                }}
+            }},
+            "elements": [
+                {{
+                "fields": [
+                    {{
+                    "is_short": false,
+                    "text": {{
+                        "content": "**Account(s): **{affected_org_accounts}",
+                        "tag": "lark_md"
+                    }}
+                    }},
+                    {{
+                    "is_short": false,
+                    "text": {{
+                        "content": "**Region: **{event_details['successfulSet'][0]['event']['region']}",
+                        "tag": "lark_md"
+                    }}
+                    }},
+                    {{
+                    "is_short": false,
+                    "text": {{
+                        "content": "**Service: **{event_details['successfulSet'][0]['event']['service']}",
+                        "tag": "lark_md"
+                    }}
+                    }},
+                    {{
+                    "is_short": false,
+                    "text": {{
+                        "content": "**Status: **{event_details['successfulSet'][0]['event']['statusCode']}",
+                        "tag": "lark_md"
+                    }}
+                    }},
+                    {{
+                    "is_short": false,
+                    "text": {{
+                        "content": "**Start Time (UTC): **{cleanup_time(event_details['successfulSet'][0]['event']['startTime'])}",
+                        "tag": "lark_md"
+                    }}
+                    }},
+                    {{
+                    "is_short": false,
+                    "text": {{
+                        "content": "**Resource(s): **{affected_org_entities}",
+                        "tag": "lark_md"
+                    }}
+                    }},
+                    {{
+                    "is_short": false,
+                    "text": {{
+                        "content": "**Event ARN: **{event_details['successfulSet'][0]['event']['arn']}",
+                        "tag": "lark_md"
+                    }}
+                    }},
+                    {{
+                    "is_short": false,
+                    "text": {{
+                        "content": "**Updates: **{get_last_aws_update(event_details)}",
+                        "tag": "lark_md"
+                    }}
+                    }}
+                ],
+                "tag": "div"
+                }},
+                {{
+                "tag": "hr"
+                }}
+            ]
+        }}"""
+
+    elif event_type == "resolve":
+        summary += (
+            f"[RESOLVED] The AWS Health issue with the {event_details['successfulSet'][0]['event']['service'].upper()} service in "
+            f"the {event_details['successfulSet'][0]['event']['region'].upper()} region is now resolved.*"
+        )
+        message = f"""
+        {{
+            "config": {{
+                "wide_screen_mode": true
+            }},
+            "header": {{
+                "template": "bule",
+                "title": {{
+                "content": "{summary}",
+                "tag": "plain_text"
+                }}
+            }},
+            "elements": [
+                {{
+                "fields": [
+                    {{
+                    "is_short": false,
+                    "text": {{
+                        "content": "**Account(s): **{affected_org_accounts}",
+                        "tag": "lark_md"
+                    }}
+                    }},
+                    {{
+                    "is_short": false,
+                    "text": {{
+                        "content": "**Region: **{event_details['successfulSet'][0]['event']['region']}",
+                        "tag": "lark_md"
+                    }}
+                    }},
+                    {{
+                    "is_short": false,
+                    "text": {{
+                        "content": "**Service: **{event_details['successfulSet'][0]['event']['service']}",
+                        "tag": "lark_md"
+                    }}
+                    }},
+                    {{
+                    "is_short": false,
+                    "text": {{
+                        "content": "**Status: **{event_details['successfulSet'][0]['event']['statusCode']}",
+                        "tag": "lark_md"
+                    }}
+                    }},
+                    {{
+                    "is_short": false,
+                    "text": {{
+                        "content": "**Start Time (UTC): **{cleanup_time(event_details['successfulSet'][0]['event']['startTime'])}",
+                        "tag": "lark_md"
+                    }}
+                    }},
+                    {{
+                    "is_short": false,
+                    "text": {{
+                        "content": "**End Time (UTC): **{cleanup_time(event_details['successfulSet'][0]['event']['endTime'])}",
+                        "tag": "lark_md"
+                    }}
+                    }},
+                    {{
+                    "is_short": false,
+                    "text": {{
+                        "content": "**Resource(s): **{affected_org_entities}",
+                        "tag": "lark_md"
+                    }}
+                    }},
+                    {{
+                    "is_short": false,
+                    "text": {{
+                        "content": "**Event ARN: **{event_details['successfulSet'][0]['event']['arn']}",
+                        "tag": "lark_md"
+                    }}
+                    }},
+                    {{
+                    "is_short": false,
+                    "text": {{
+                        "content": "**Updates: **{get_last_aws_update(event_details)}",
+                        "tag": "lark_md"
+                    }}
+                    }}
+                ],
+                "tag": "div"
+                }},
+                {{
+                "tag": "hr"
+                }}
+            ]
+        }}"""
+
+    message = json.loads(message, strict=False)
+    print("Message sent to feishu: ", message)
+    return message
+
+
 def get_message_for_slack(event_details, event_type, affected_accounts, affected_entities, slack_webhook):
     message = ""
     summary = ""
@@ -117,6 +602,7 @@ def get_message_for_slack(event_details, event_type, affected_accounts, affected
     
     print("Message sent to Slack: ", message)
     return message
+
 
 # COMMON compose the event detail field for org and non-org
 def get_detail_for_eventbridge(event_details, affected_entities):

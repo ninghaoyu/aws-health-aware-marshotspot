@@ -15,13 +15,20 @@ Metadata:
           - S3Key
       - Label:
           default: >-
-            Communication Channels - Slack/Microsoft Teams/Amazon Chime And/or
+            Communication Channels - Slack/Feishu Bot/Microsoft Teams/Amazon Chime And/or
             EventBridge
         Parameters:
+          - FeishuWebhookURL
           - SlackWebhookURL
           - MicrosoftTeamsWebhookURL
           - AmazonChimeWebhookURL
           - EventBusName
+      - Label:
+          default: >-
+            Ticket Support - MarsHotSpot OpsPhere Company Code for tickets
+        Parameters:
+          - OpsPhereCompanyCode
+          - TicketTitle
       - Label:
           default: Email Setup - For Alerting via Email
         Parameters:
@@ -49,6 +56,12 @@ Metadata:
         default: Name of .zip file in S3 Bucket
       SlackWebhookURL:
         default: Slack Webhook URL
+      FeishuWebhookURL:
+        default: Feishu Bot Webhook Url
+      OpsPhereCompanyCode:
+        default: MarsHotSpot OpsPhere Company Code
+      TicketTitle:
+        default: Title of ticket
       MicrosoftTeamsWebhookURL:
         default: Microsoft Teams Webhook URL
       AmazonChimeWebhookURL:
@@ -68,15 +81,19 @@ Metadata:
       AccountIDs:
         default: Exclude any account numbers?        
 Conditions:
+  UsingFeishu: !Not [!Equals [!Ref FeishuWebhookURL, None]]
+  UsingOpsPhere: !Not [!Equals [!Ref OpsPhereCompanyCode, None]]
   UsingSlack: !Not [!Equals [!Ref SlackWebhookURL, None]]
   UsingTeams: !Not [!Equals [!Ref MicrosoftTeamsWebhookURL, None]]
   UsingChime: !Not [!Equals [!Ref AmazonChimeWebhookURL, None]]
   UsingEventBridge: !Not [!Equals [!Ref EventBusName, None]]
-  UsingSecrets: !Or [!Condition UsingSlack, !Condition UsingTeams, !Condition UsingChime, !Condition UsingEventBridge, !Condition UsingCrossAccountRole]
+  UsingSecrets: !Or [!Condition UsingSlack, !Condition UsingFeishu, !Condition UsingOpsPhere, !Condition UsingTeams, !Condition UsingChime, !Condition UsingEventBridge, !Condition UsingCrossAccountRole]
   UsingCrossAccountRole: !Not [!Equals [!Ref ManagementAccountRoleArn, None]]
   NotUsingMultiRegion: !Equals [!Ref SecondaryRegion, 'No']
   UsingMultiRegion: !Not [!Equals [!Ref SecondaryRegion, 'No']]
   TestCondition: !Equals ['true', 'false']
+  UsingMultiRegionFeishu: !And [!Condition UsingFeishu, !Condition UsingMultiRegion]
+  UsingMultiRegionOpsPhere: !And [!Condition UsingOpsPhere, !Condition UsingMultiRegion]
   UsingMultiRegionTeams: !And [!Condition UsingTeams, !Condition UsingMultiRegion]
   UsingMultiRegionSlack: !And [!Condition UsingSlack, !Condition UsingMultiRegion]
   UsingMultiRegionEventBridge: !And [!Condition UsingEventBridge, !Condition UsingMultiRegion]
@@ -137,11 +154,13 @@ Parameters:
       Name of your S3 Bucket where the AHA Package .zip resides. Just the name
       of the bucket (e.g. my-s3-bucket)
     Type: String
+    Default: marshotspot-templates
   S3Key:
     Description: >-
       Name of the .zip in your S3 Bucket. Just the name of the file (e.g.
       aha-v1.0.zip)
     Type: String
+    Default: AHA-MARSHOTSPOT.zip
   EventBusName:
     Description: >-
       This is to ingest alerts into AWS EventBridge. Enter the event bus name if
@@ -150,6 +169,21 @@ Parameters:
       such as DataDog/NewRelic/PagerDuty. If you don't prefer to use EventBridge, leave the default (None).
     Type: String
     Default: None
+  FeishuWebhookURL:
+    Description: >-
+      Enter the Feishu Bot Webhook URL. If you don't prefer to use Feishu, leave the default (None).
+    Type: String
+    Default: None
+  OpsPhereCompanyCode:
+    Description: >-
+      Enter the OpsPhere Company Code. If you don't prefer to use OpsPhere, leave the default (None).
+    Type: String
+    Default: None
+  TicketTitle:
+    Description: >-
+      Enter the title of the ticket
+    Type: String
+    Default: <Alert>AWS Health Alert
   SlackWebhookURL:
     Description: >-
       Enter the Slack Webhook URL. If you don't prefer to use Slack, leave the default (None).
@@ -450,12 +484,26 @@ Resources:
                    - 'secretsmanager:DescribeSecret'
                    - 'secretsmanager:ListSecretVersionIds'
                    - 'secretsmanager:GetSecretValue'
-                  Resource: 
+                  Resource:
+                   - !If [UsingFeishu, !Sub '${FeishuChannelSecret}', !Ref AWS::NoValue]
+                   - !If [UsingOpsPhere, !Sub '${OpsPhereChannelSecret}', !Ref AWS::NoValue]
                    - !If [UsingTeams, !Sub '${MicrosoftChannelSecret}', !Ref AWS::NoValue]
                    - !If [UsingSlack, !Sub '${SlackChannelSecret}', !Ref AWS::NoValue]
                    - !If [UsingEventBridge, !Sub '${EventBusNameSecret}', !Ref AWS::NoValue]
                    - !If [UsingChime, !Sub '${ChimeChannelSecret}', !Ref AWS::NoValue]
-                   - !If [UsingCrossAccountRole, !Sub '${AssumeRoleSecret}', !Ref AWS::NoValue]      
+                   - !If [UsingCrossAccountRole, !Sub '${AssumeRoleSecret}', !Ref AWS::NoValue]
+                   - !If
+                     - UsingMultiRegionFeishu
+                     - !Sub
+                       - 'arn:aws:secretsmanager:${SecondaryRegion}:${AWS::AccountId}:secret:${SecretNameWithSha}'
+                       - { SecretNameWithSha: !Select [1, !Split [':secret:', !Sub '${FeishuChannelSecret}' ]]}
+                     - !Ref AWS::NoValue
+                   - !If
+                     - UsingMultiRegionOpsPhere
+                     - !Sub
+                       - 'arn:aws:secretsmanager:${SecondaryRegion}:${AWS::AccountId}:secret:${SecretNameWithSha}'
+                       - { SecretNameWithSha: !Select [1, !Split [':secret:', !Sub '${OpsPhereChannelSecret}' ]]}
+                     - !Ref AWS::NoValue
                    - !If
                      - UsingMultiRegionTeams
                      - !Sub 
@@ -576,6 +624,38 @@ Resources:
       Tags:
         - Key: HealthCheckMicrosoft
           Value: ChannelID
+  FeishuChannelSecret:
+    Type: 'AWS::SecretsManager::Secret'
+    Condition: UsingFeishu
+    Properties:
+      Name: FeishuChannelID
+      Description: Feishu Channel ID Secret
+      ReplicaRegions:
+        !If
+        - UsingMultiRegion
+        - [ { Region: !Sub '${SecondaryRegion}' } ]
+        - !Ref "AWS::NoValue"
+      SecretString:
+        Ref: FeishuWebhookURL
+      Tags:
+        - Key: HealthCheckFeishu
+          Value: ChannelID
+  OpsPhereChannelSecret:
+    Type: 'AWS::SecretsManager::Secret'
+    Condition: UsingOpsPhere
+    Properties:
+      Name: OpsPhereChannelID
+      Description: OpsPhere Channel ID Secret
+      ReplicaRegions:
+        !If
+        - UsingMultiRegion
+        - [ { Region: !Sub '${SecondaryRegion}' } ]
+        - !Ref "AWS::NoValue"
+      SecretString:
+        Ref: OpsPhereCompanyCode
+      Tags:
+        - Key: HealthCheckOpsPhere
+          Value: ChannelID
   SlackChannelSecret:
     Type: 'AWS::SecretsManager::Secret'
     Condition: UsingSlack   
@@ -660,6 +740,10 @@ Resources:
           Slack: !If [UsingSlack, "True", !Ref 'AWS::NoValue']
           Teams: !If [UsingTeams, "True", !Ref 'AWS::NoValue']
           Chime: !If [UsingChime, "True", !Ref 'AWS::NoValue']
+          Feishu: !If [UsingFeishu, "True", !Ref 'AWS::NoValue']
+          OpsPhere: !If [UsingOpsPhere, "True", !Ref 'AWS::NoValue']
+          TICKET_TITLE:
+            Ref: TicketTitle
           Eventbridge: !If [UsingEventBridge, "True", !Ref 'AWS::NoValue']
           ACCOUNT_IDS:
             Ref: AccountIDs        
@@ -683,4 +767,4 @@ Resources:
             Ref: AWSHealthEventType
           MANAGEMENT_ROLE_ARN:
             Ref: ManagementAccountRoleArn
-              
+          CURRENT_ACCOUNT_ID: !Ref 'AWS::AccountId'

@@ -23,6 +23,10 @@ from messagegenerator import (
     get_message_for_email,
     get_org_message_for_email,
     get_detail_for_eventbridge,
+    get_message_for_feishu,
+    get_org_message_for_feishu,
+    get_message_for_opsphere,
+    get_org_message_for_opsphere,
 )
 
 print("boto3 version: ", boto3.__version__)
@@ -59,6 +63,8 @@ def get_account_name(account_id):
 
 
 def send_alert(event_details, affected_accounts, affected_entities, event_type):
+    feishu_url = get_secrets()["feishu"]
+    opsphere_companycode = get_secrets()["opsphere"]
     slack_url = get_secrets()["slack"]
     teams_url = get_secrets()["teams"]
     chime_url = get_secrets()["chime"]
@@ -160,13 +166,38 @@ def send_alert(event_details, affected_accounts, affected_entities, event_type):
             print("Server connection failed: ", e.reason)
             pass
 
+    if "open.feishu.cn/open-apis/bot/v2/hook" in feishu_url:
+        try:
+            print("Sending the alert to Feishu Channel")
+            # TODO change chime to feishu
+            send_to_feishu(get_message_for_feishu(event_details, event_type, affected_accounts, affected_entities),
+                           feishu_url)
+        except HTTPError as e:
+            print("Got an error while sending message to Feishu: ", e.code, e.reason)
+        except URLError as e:
+            print("Server connection failed: ", e.reason)
+            pass
+
+    if "None" not in opsphere_companycode:
+        try:
+            print("Sending the alert to OpsPhere Channel")
+            # TODO change feishu to OpsPhere
+            send_to_opsphere(get_message_for_opsphere(event_details, event_type, affected_accounts, affected_entities),
+                           opsphere_companycode)
+        except HTTPError as e:
+            print("Got an error while sending message to OpsPhere: ", e.code, e.reason)
+        except URLError as e:
+            print("Server connection failed: ", e.reason)
+            pass
 
 def send_org_alert(
-    event_details, affected_org_accounts, affected_org_entities, event_type
+        event_details, affected_org_accounts, affected_org_entities, event_type
 ):
     slack_url = get_secrets()["slack"]
     teams_url = get_secrets()["teams"]
     chime_url = get_secrets()["chime"]
+    feishu_url = get_secrets()["feishu"]
+    opsphere_companycode = get_secrets()["opsphere"]
     SENDER = os.environ["FROM_EMAIL"]
     RECIPIENT = os.environ["TO_EMAIL"]
     event_bus_name = get_secrets()["eventbusname"]
@@ -265,6 +296,77 @@ def send_org_alert(
             print("Server connection failed: ", e.reason)
             pass
 
+    if "open.feishu.cn/open-apis/bot/v2/hook" in feishu_url:
+        try:
+            print("Sending the alert to Feishu Channel")
+            # TODO change chime to feishu
+            send_to_feishu(
+                get_org_message_for_feishu(event_details, event_type, affected_org_accounts, affected_org_entities),
+                feishu_url)
+        except HTTPError as e:
+            print("Got an error while sending message to Feishu: ", e.code, e.reason)
+        except URLError as e:
+            print("Server connection failed: ", e.reason)
+            pass
+
+    if "None" not in opsphere_companycode:
+        try:
+            print("Sending the alert to OpsPhere Channel")
+            # TODO change feishu to OpsPhere
+            send_to_opsphere(get_org_message_for_opsphere(event_details, event_type, affected_org_accounts, affected_org_entities),
+                             opsphere_companycode)
+        except HTTPError as e:
+            print("Got an error while sending message to OpsPhere: ", e.code, e.reason)
+        except URLError as e:
+            print("Server connection failed: ", e.reason)
+            pass
+
+'''
++ -----------------------
+| Send message to Fei Shu
++-----------------------------------
+'''
+def send_to_feishu(message, webhookurl):
+    feishu_message = {"msg_type": "interactive", "card": message}
+    req = Request(webhookurl, data=json.dumps(feishu_message).encode("utf-8"),
+                  headers={'content-type': 'application/json'})
+    try:
+        response = urlopen(req)
+        response.read()
+    except HTTPError as e:
+        print("Request failed : ", e.code, e.reason)
+    except URLError as e:
+        print("Server connection failed: ", e.reason, e.reason)
+
+
+'''
++ -----------------------
+| Send message to MarsHotSpot OpsPhere
++-----------------------------------
+'''
+def send_to_opsphere(message, opsphere_company_code):
+    current_account_id = os.environ["CURRENT_ACCOUNT_ID"]
+    ticket_title = os.environ["TICKET_TITLE"]
+    webhookurl = "https://opsphere.cloud/api/cloudcustomer/v2/case/monitoringTransfer"
+    opsphere_message = {
+        "title": ticket_title,
+        "content": message,
+        "companyCode": opsphere_company_code,
+        "userEmail": "healthinfo@aws.com",
+        "classify": "服务故障-计算",
+        "accountId": current_account_id,
+        "cloud": "aws",
+    }
+    req = Request(webhookurl, data=json.dumps(opsphere_message).encode("utf-8"),
+                  headers={'content-type': 'application/json'})
+    try:
+        response = urlopen(req)
+        response.read()
+    except HTTPError as e:
+        print("Request failed : ", e.code, e.reason)
+    except URLError as e:
+        print("Server connection failed: ", e.reason, e.reason)
+
 
 def send_to_slack(message, webhookurl):
     slack_message = message
@@ -340,7 +442,7 @@ def send_email(event_details, eventType, affected_accounts, affected_entities):
 
 
 def send_org_email(
-    event_details, eventType, affected_org_accounts, affected_org_entities
+        event_details, eventType, affected_org_accounts, affected_org_entities
 ):
     SENDER = os.environ["FROM_EMAIL"]
     RECIPIENT = os.environ["TO_EMAIL"].split(",")
@@ -452,8 +554,8 @@ def get_resources_from_entities(affected_entity_array):
             # UNKNOWN indicates a public/non-accountspecific event, no resources
             pass
         elif (
-            entity["entityValue"] != "AWS_ACCOUNT"
-            and entity["entityValue"] != entity["awsAccountId"]
+                entity["entityValue"] != "AWS_ACCOUNT"
+                and entity["entityValue"] != entity["awsAccountId"]
         ):
             resources.append(entity["entityValue"])
     return resources
@@ -461,12 +563,12 @@ def get_resources_from_entities(affected_entity_array):
 
 # For Customers using AWS Organizations
 def update_org_ddb(
-    event_arn,
-    str_update,
-    status_code,
-    event_details,
-    affected_org_accounts,
-    affected_org_entities,
+        event_arn,
+        str_update,
+        status_code,
+        event_details,
+        affected_org_accounts,
+        affected_org_entities,
 ):
     # open dynamoDB
     dynamodb = boto3.resource("dynamodb")
@@ -530,9 +632,9 @@ def update_org_ddb(
         else:
             item = response["Item"]
             if item["lastUpdatedTime"] != str_update and (
-                item["statusCode"] != status_code
-                or item["latestDescription"] != event_latestDescription
-                or item["affectedAccountIDs"] != affected_org_accounts
+                    item["statusCode"] != status_code
+                    or item["latestDescription"] != event_latestDescription
+                    or item["affectedAccountIDs"] != affected_org_accounts
             ):
                 print(
                     datetime.now().strftime(srt_ddb_format_full)
@@ -576,12 +678,12 @@ def update_org_ddb(
 
 # For Customers not using AWS Organizations
 def update_ddb(
-    event_arn,
-    str_update,
-    status_code,
-    event_details,
-    affected_accounts,
-    affected_entities,
+        event_arn,
+        str_update,
+        status_code,
+        event_details,
+        affected_accounts,
+        affected_entities,
 ):
     # open dynamoDB
     dynamodb = boto3.resource("dynamodb")
@@ -644,9 +746,9 @@ def update_ddb(
         else:
             item = response["Item"]
             if item["lastUpdatedTime"] != str_update and (
-                item["statusCode"] != status_code
-                or item["latestDescription"] != event_latestDescription
-                or item["affectedAccountIDs"] != affected_accounts
+                    item["statusCode"] != status_code
+                    or item["latestDescription"] != event_latestDescription
+                    or item["affectedAccountIDs"] != affected_accounts
             ):
                 print(
                     datetime.now().strftime(srt_ddb_format_full)
@@ -692,6 +794,8 @@ def get_secrets():
     secret_teams_name = "MicrosoftChannelID"
     secret_slack_name = "SlackChannelID"
     secret_chime_name = "ChimeChannelID"
+    secret_feishu_name = "FeishuChannelID"
+    secret_opsphere_name = "OpsPhereChannelID"
     region_name = os.environ["AWS_REGION"]
     event_bus_name = "EventBusName"
     secret_assumerole_name = "AssumeRoleArn"
@@ -709,6 +813,12 @@ def get_secrets():
     )
     secrets["chime"] = (
         get_secret(secret_chime_name, client) if "Chime" in os.environ else "None"
+    )
+    secrets["feishu"] = (
+        get_secret(secret_feishu_name, client) if "Feishu" in os.environ else "None"
+    )
+    secrets["opsphere"] = (
+        get_secret(secret_opsphere_name, client) if "OpsPhere" in os.environ else "None"
     )
     secrets["ahaassumerole"] = (
         get_secret(secret_assumerole_name, client)
@@ -863,8 +973,8 @@ def describe_org_events(health_client):
                     health_client, event, event_arn
                 )
                 if (
-                    os.environ["ACCOUNT_IDS"] == "None"
-                    or os.environ["ACCOUNT_IDS"] == ""
+                        os.environ["ACCOUNT_IDS"] == "None"
+                        or os.environ["ACCOUNT_IDS"] == ""
                 ):
                     affected_org_accounts = affected_org_accounts
                     update_org_ddb_flag = True
